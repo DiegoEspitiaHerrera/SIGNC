@@ -129,6 +129,8 @@
     document.getElementById('sidebarUserRol').textContent = u.rol;
     document.getElementById('mobileEmpresa').textContent = empName;
     document.getElementById('mobileUserRol').textContent = u.rol;
+    const adminBtn = document.getElementById('navAdminBtn');
+    if (adminBtn) adminBtn.classList.toggle('hidden', u.rol !== 'ADMIN');
   }
 
   function navigateTo(view) {
@@ -153,6 +155,8 @@
       SncUI.loadAndRender(container);
     } else if (view === 'auditorias') {
       AuditUI.loadAndRender(container);
+    } else if (view === 'admin') {
+      AdminUI.loadAndRender(container);
     } else if (view === 'futuros') {
       container.innerHTML = renderFutureRoadmap();
     }

@@ -217,3 +217,63 @@ function apiGetKpis(token) {
     return errorResponse(err);
   }
 }
+
+/**
+ * Endpoint RPC: Panorama de Administración Global (solo rol ADMIN).
+ */
+function apiAdminGetOverview(token) {
+  try {
+    requireSession(token, [ROLES.ADMIN]);
+    return okResponse(adminGetOverview());
+  } catch (err) {
+    return errorResponse(err);
+  }
+}
+
+/**
+ * Endpoint RPC: Guardar Empresa (solo rol ADMIN).
+ */
+function apiAdminSaveEmpresa(token, payload) {
+  try {
+    requireSession(token, [ROLES.ADMIN]);
+    return okResponse(adminSaveEmpresa(payload));
+  } catch (err) {
+    return errorResponse(err);
+  }
+}
+
+/**
+ * Endpoint RPC: Guardar Área (solo rol ADMIN).
+ */
+function apiAdminSaveArea(token, payload) {
+  try {
+    requireSession(token, [ROLES.ADMIN]);
+    return okResponse(adminSaveArea(payload));
+  } catch (err) {
+    return errorResponse(err);
+  }
+}
+
+/**
+ * Endpoint RPC: Guardar Proceso (solo rol ADMIN).
+ */
+function apiAdminSaveProceso(token, payload) {
+  try {
+    requireSession(token, [ROLES.ADMIN]);
+    return okResponse(adminSaveProceso(payload));
+  } catch (err) {
+    return errorResponse(err);
+  }
+}
+
+/**
+ * Endpoint RPC: Guardar Usuario (solo rol ADMIN).
+ */
+function apiAdminSaveUsuario(token, payload) {
+  try {
+    requireSession(token, [ROLES.ADMIN]);
+    return okResponse(adminSaveUsuario(payload));
+  } catch (err) {
+    return errorResponse(err);
+  }
+}

@@ -76,12 +76,36 @@ function setupInicial() {
   }
 
   seedInitialData_();
+  ensureGlobalAdmin_();
 
   return {
     spreadsheetId: ssId,
     spreadsheetUrl: ss.getUrl(),
     driveFolderId: driveId
   };
+}
+
+/**
+ * Garantiza que exista al menos un usuario Administrador Global (rol ADMIN).
+ * Puede ejecutarse de forma segura incluso si ya hay datos en el Sheet.
+ */
+function ensureGlobalAdmin_() {
+  var users = repoGetAll(SHEETS.USUARIOS);
+  var hasAdmin = users.some(function(u) { return u.rol === ROLES.ADMIN; });
+  if (hasAdmin) return;
+
+  var empresas = repoGetAll(SHEETS.EMPRESAS);
+  var defaultEmpId = empresas.length > 0 ? empresas[0].id : 'EMP-01';
+  repoInsert(SHEETS.USUARIOS, {
+    id: 'USR-ADMIN',
+    empresa_id: defaultEmpId,
+    area_id: '',
+    nombre: 'Administrador Global',
+    usuario: 'superadmin',
+    password_hash: hashPassword('Signc2026*'),
+    rol: ROLES.ADMIN,
+    activo: true
+  });
 }
 
 /**

@@ -1,0 +1,346 @@
+<script>
+  const AdminUI = {
+    data: { empresas: [], areas: [], procesos: [], usuarios: [] },
+    selectedEmpresaId: null,
+    activeTab: 'areas',
+
+    async loadAndRender(container) {
+      container.innerHTML = '<div class="bg-white rounded-2xl p-8 border border-slate-200 text-center text-sm text-slate-500">Cargando administración global...</div>';
+      try {
+        this.data = await ApiClient.call('apiAdminGetOverview', AppState.token);
+        if (!this.selectedEmpresaId && this.data.empresas.length > 0) {
+          this.selectedEmpresaId = this.data.empresas[0].id;
+        }
+        this.render(container);
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    },
+
+    isTrue(val) {
+      return val === true || String(val).toUpperCase() === 'TRUE';
+    },
+
+    render(container) {
+      const emps = this.data.empresas;
+      const selEmp = emps.find(e => e.id === this.selectedEmpresaId);
+      const empAreas = this.data.areas.filter(a => a.empresa_id === this.selectedEmpresaId);
+      const empProcesos = this.data.procesos.filter(p => p.empresa_id === this.selectedEmpresaId);
+      const empUsers = this.data.usuarios.filter(u => u.empresa_id === this.selectedEmpresaId);
+
+      container.innerHTML = `
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+          <div>
+            <h2 class="text-xl md:text-2xl font-extrabold text-slate-900 tracking-tight">Administración Global Multiempresa</h2>
+            <p class="text-xs text-slate-500">Gestión centralizada de empresas, áreas operativas, procesos y usuarios del sistema.</p>
+          </div>
+          <button onclick="AdminUI.openEmpresaModal()" class="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-sm shadow-sm transition">
+            + Nueva Empresa
+          </button>
+        </div>
+
+        <!-- Lista de Empresas -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          ${emps.map(e => {
+            const active = this.isTrue(e.activa);
+            const selected = e.id === this.selectedEmpresaId;
+            const nAreas = this.data.areas.filter(a => a.empresa_id === e.id).length;
+            const nUsers = this.data.usuarios.filter(u => u.empresa_id === e.id).length;
+            return `
+              <div onclick="AdminUI.selectedEmpresaId='${e.id}'; AdminUI.render(document.getElementById('mainContent'))"
+                class="bg-white rounded-2xl p-4 border-2 transition cursor-pointer ${selected ? 'border-amber-500 shadow-md' : 'border-slate-200 hover:border-slate-300'}">
+                <div class="flex items-start justify-between gap-2 mb-2">
+                  <div>
+                    <span class="font-mono-code text-[11px] font-bold text-slate-400">${e.id}</span>
+                    <h3 class="font-bold text-slate-900 text-base leading-tight">${e.nombre}</h3>
+                    <p class="text-xs text-slate-500 font-mono-code">NIT: ${e.nit || '—'}</p>
+                  </div>
+                  <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${active ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500 border border-slate-200'}">
+                    ${active ? 'ACTIVA' : 'INACTIVA'}
+                  </span>
+                </div>
+                <div class="flex items-center justify-between pt-3 border-t border-slate-100 text-xs text-slate-500">
+                  <span><strong>${nAreas}</strong> áreas · <strong>${nUsers}</strong> usuarios</span>
+                  <button onclick="event.stopPropagation(); AdminUI.openEmpresaModal('${e.id}')" class="text-amber-600 hover:text-amber-700 font-bold">Editar</button>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+
+        ${selEmp ? `
+          <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+            <div class="px-5 py-4 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <span class="text-[11px] uppercase tracking-wider text-amber-400 font-bold">Estructura de Empresa</span>
+                <h3 class="text-base font-bold">${selEmp.nombre}</h3>
+              </div>
+              <div class="flex gap-1.5 bg-slate-800 p-1 rounded-xl text-xs font-semibold">
+                <button onclick="AdminUI.activeTab='areas'; AdminUI.render(document.getElementById('mainContent'))" class="px-3 py-1.5 rounded-lg ${this.activeTab==='areas'?'bg-amber-500 text-slate-950':'text-slate-300'}">Áreas (${empAreas.length})</button>
+                <button onclick="AdminUI.activeTab='procesos'; AdminUI.render(document.getElementById('mainContent'))" class="px-3 py-1.5 rounded-lg ${this.activeTab==='procesos'?'bg-amber-500 text-slate-950':'text-slate-300'}">Procesos (${empProcesos.length})</button>
+                <button onclick="AdminUI.activeTab='usuarios'; AdminUI.render(document.getElementById('mainContent'))" class="px-3 py-1.5 rounded-lg ${this.activeTab==='usuarios'?'bg-amber-500 text-slate-950':'text-slate-300'}">Usuarios (${empUsers.length})</button>
+              </div>
+            </div>
+
+            <div class="p-5">
+              ${this.activeTab === 'areas' ? this.renderAreasTab(empAreas) : this.activeTab === 'procesos' ? this.renderProcesosTab(empProcesos, empAreas) : this.renderUsuariosTab(empUsers, empAreas)}
+            </div>
+          </div>
+        ` : ''}
+      `;
+    },
+
+    renderAreasTab(areas) {
+      return `
+        <div class="flex justify-between items-center mb-4">
+          <p class="text-xs text-slate-500">Define las áreas y si requieren campos técnicos de Producción en SNC.</p>
+          <button onclick="AdminUI.openAreaModal()" class="px-3.5 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold">+ Nueva Área</button>
+        </div>
+        <div class="divide-y divide-slate-100">
+          ${areas.map(a => `
+            <div class="py-3 flex items-center justify-between gap-3 text-sm">
+              <div>
+                <p class="font-semibold text-slate-800">${a.nombre} ${this.isTrue(a.requiere_datos_tecnicos) ? '<span class="ml-2 text-[10px] px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-bold">Datos Técnicos Prod.</span>' : ''}</p>
+                <span class="font-mono-code text-[11px] text-slate-400">${a.id} · ${this.isTrue(a.activa) ? 'Activa' : 'Inactiva'}</span>
+              </div>
+              <button onclick="AdminUI.openAreaModal('${a.id}')" class="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold hover:bg-slate-50">Editar</button>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    },
+
+    renderProcesosTab(procesos, areas) {
+      const areaName = (id) => (areas.find(a => a.id === id) || {}).nombre || '—';
+      return `
+        <div class="flex justify-between items-center mb-4">
+          <p class="text-xs text-slate-500">Procesos operativos vinculados a cada área.</p>
+          <button onclick="AdminUI.openProcesoModal()" class="px-3.5 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold">+ Nuevo Proceso</button>
+        </div>
+        <div class="divide-y divide-slate-100">
+          ${procesos.length === 0 ? '<p class="text-xs text-slate-400 py-4">Sin procesos registrados.</p>' : procesos.map(p => `
+            <div class="py-3 flex items-center justify-between gap-3 text-sm">
+              <div>
+                <p class="font-semibold text-slate-800">${p.nombre}</p>
+                <span class="text-xs text-slate-500">Área: <strong>${areaName(p.area_id)}</strong> · ${this.isTrue(p.activo) ? 'Activo' : 'Inactivo'}</span>
+              </div>
+              <button onclick="AdminUI.openProcesoModal('${p.id}')" class="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold hover:bg-slate-50">Editar</button>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    },
+
+    renderUsuariosTab(users, areas) {
+      const areaName = (id) => (areas.find(a => a.id === id) || {}).nombre || 'Global / Sin área';
+      return `
+        <div class="flex justify-between items-center mb-4">
+          <p class="text-xs text-slate-500">Cuentas de acceso propio y roles por empresa.</p>
+          <button onclick="AdminUI.openUsuarioModal()" class="px-3.5 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold">+ Nuevo Usuario</button>
+        </div>
+        <div class="divide-y divide-slate-100">
+          ${users.map(u => `
+            <div class="py-3 flex items-center justify-between gap-3 text-sm">
+              <div>
+                <p class="font-semibold text-slate-800">${u.nombre} <span class="font-mono-code text-xs text-slate-400">(@${u.usuario})</span></p>
+                <p class="text-xs text-slate-500">Rol: <strong class="text-amber-700">${u.rol}</strong> · Área: ${areaName(u.area_id)} · ${this.isTrue(u.activo) ? 'Activo' : 'Inactivo'}</p>
+              </div>
+              <button onclick="AdminUI.openUsuarioModal('${u.id}')" class="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold hover:bg-slate-50">Editar</button>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    },
+
+    openEmpresaModal(id) {
+      const emp = id ? this.data.empresas.find(e => e.id === id) : {};
+      document.getElementById('modalCard').innerHTML = `
+        <div class="px-6 py-4 bg-slate-900 text-white flex justify-between items-center">
+          <h3 class="font-bold">${id ? 'Editar Empresa' : 'Nueva Empresa'}</h3>
+          <button onclick="closeModal()" class="text-slate-400 hover:text-white text-lg">&times;</button>
+        </div>
+        <form onsubmit="AdminUI.saveEmpresa(event, '${id || ''}')" class="p-6 space-y-4 text-sm">
+          <div>
+            <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Nombre / Razón Social *</label>
+            <input id="admEmpNombre" required value="${emp.nombre || ''}" class="w-full px-3.5 py-2 rounded-xl border border-slate-300" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold uppercase text-slate-600 mb-1">NIT</label>
+            <input id="admEmpNit" value="${emp.nit || ''}" class="w-full px-3.5 py-2 rounded-xl border border-slate-300 font-mono-code" />
+          </div>
+          ${id ? `<label class="flex items-center gap-2 text-xs font-semibold"><input id="admEmpActiva" type="checkbox" ${this.isTrue(emp.activa)?'checked':''} /> Empresa activa</label>` : ''}
+          <div class="flex justify-end gap-2 pt-2">
+            <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl border border-slate-300 font-semibold">Cancelar</button>
+            <button type="submit" class="px-5 py-2 rounded-xl bg-amber-500 text-slate-950 font-bold">Guardar</button>
+          </div>
+        </form>
+      `;
+      document.getElementById('modalRoot').classList.remove('hidden');
+    },
+
+    async saveEmpresa(e, id) {
+      e.preventDefault();
+      const payload = {
+        id: id || undefined,
+        nombre: document.getElementById('admEmpNombre').value,
+        nit: document.getElementById('admEmpNit').value,
+        activa: id ? document.getElementById('admEmpActiva').checked : true
+      };
+      await this.runSave('apiAdminSaveEmpresa', payload, (res) => { this.selectedEmpresaId = res.id; });
+    },
+
+    openAreaModal(id) {
+      const a = id ? this.data.areas.find(x => x.id === id) : {};
+      document.getElementById('modalCard').innerHTML = `
+        <div class="px-6 py-4 bg-slate-900 text-white flex justify-between items-center">
+          <h3 class="font-bold">${id ? 'Editar Área' : 'Nueva Área'}</h3>
+          <button onclick="closeModal()" class="text-slate-400 hover:text-white text-lg">&times;</button>
+        </div>
+        <form onsubmit="AdminUI.saveArea(event, '${id || ''}')" class="p-6 space-y-4 text-sm">
+          <div>
+            <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Nombre del Área *</label>
+            <input id="admAreaNombre" required value="${a.nombre || ''}" class="w-full px-3.5 py-2 rounded-xl border border-slate-300" />
+          </div>
+          <label class="flex items-center gap-2 text-xs font-semibold text-slate-700">
+            <input id="admAreaTec" type="checkbox" ${this.isTrue(a.requiere_datos_tecnicos)?'checked':''} />
+            Requiere campos técnicos de Producción (calibre, longitud, peso, máquina)
+          </label>
+          ${id ? `<label class="flex items-center gap-2 text-xs font-semibold"><input id="admAreaActiva" type="checkbox" ${this.isTrue(a.activa)?'checked':''} /> Área activa</label>` : ''}
+          <div class="flex justify-end gap-2 pt-2">
+            <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl border border-slate-300 font-semibold">Cancelar</button>
+            <button type="submit" class="px-5 py-2 rounded-xl bg-amber-500 text-slate-950 font-bold">Guardar</button>
+          </div>
+        </form>
+      `;
+      document.getElementById('modalRoot').classList.remove('hidden');
+    },
+
+    async saveArea(e, id) {
+      e.preventDefault();
+      await this.runSave('apiAdminSaveArea', {
+        id: id || undefined,
+        empresa_id: this.selectedEmpresaId,
+        nombre: document.getElementById('admAreaNombre').value,
+        requiere_datos_tecnicos: document.getElementById('admAreaTec').checked,
+        activa: id ? document.getElementById('admAreaActiva').checked : true
+      });
+    },
+
+    openProcesoModal(id) {
+      const p = id ? this.data.procesos.find(x => x.id === id) : {};
+      const areas = this.data.areas.filter(a => a.empresa_id === this.selectedEmpresaId);
+      document.getElementById('modalCard').innerHTML = `
+        <div class="px-6 py-4 bg-slate-900 text-white flex justify-between items-center">
+          <h3 class="font-bold">${id ? 'Editar Proceso' : 'Nuevo Proceso'}</h3>
+          <button onclick="closeModal()" class="text-slate-400 hover:text-white text-lg">&times;</button>
+        </div>
+        <form onsubmit="AdminUI.saveProceso(event, '${id || ''}')" class="p-6 space-y-4 text-sm">
+          <div>
+            <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Área *</label>
+            <select id="admProArea" required class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-slate-50">
+              ${areas.map(a => `<option value="${a.id}" ${p.area_id===a.id?'selected':''}>${a.nombre}</option>`).join('')}
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Nombre del Proceso *</label>
+            <input id="admProNombre" required value="${p.nombre || ''}" class="w-full px-3.5 py-2 rounded-xl border border-slate-300" />
+          </div>
+          ${id ? `<label class="flex items-center gap-2 text-xs font-semibold"><input id="admProActivo" type="checkbox" ${this.isTrue(p.activo)?'checked':''} /> Proceso activo</label>` : ''}
+          <div class="flex justify-end gap-2 pt-2">
+            <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl border border-slate-300 font-semibold">Cancelar</button>
+            <button type="submit" class="px-5 py-2 rounded-xl bg-amber-500 text-slate-950 font-bold">Guardar</button>
+          </div>
+        </form>
+      `;
+      document.getElementById('modalRoot').classList.remove('hidden');
+    },
+
+    async saveProceso(e, id) {
+      e.preventDefault();
+      await this.runSave('apiAdminSaveProceso', {
+        id: id || undefined,
+        empresa_id: this.selectedEmpresaId,
+        area_id: document.getElementById('admProArea').value,
+        nombre: document.getElementById('admProNombre').value,
+        activo: id ? document.getElementById('admProActivo').checked : true
+      });
+    },
+
+    openUsuarioModal(id) {
+      const u = id ? this.data.usuarios.find(x => x.id === id) : {};
+      const areas = this.data.areas.filter(a => a.empresa_id === this.selectedEmpresaId);
+      document.getElementById('modalCard').innerHTML = `
+        <div class="px-6 py-4 bg-slate-900 text-white flex justify-between items-center">
+          <h3 class="font-bold">${id ? 'Editar Usuario' : 'Nuevo Usuario'}</h3>
+          <button onclick="closeModal()" class="text-slate-400 hover:text-white text-lg">&times;</button>
+        </div>
+        <form onsubmit="AdminUI.saveUsuario(event, '${id || ''}')" class="p-6 space-y-3.5 text-sm">
+          <div class="grid sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Nombre completo *</label>
+              <input id="admUsrNombre" required value="${u.nombre || ''}" class="w-full px-3 py-2 rounded-xl border border-slate-300" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Usuario de acceso *</label>
+              <input id="admUsrLogin" required value="${u.usuario || ''}" class="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono-code" />
+            </div>
+          </div>
+          <div class="grid sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Rol *</label>
+              <select id="admUsrRol" required class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-slate-50">
+                ${['GERENCIA','COORDINADOR','LIDER','COLABORADOR','ADMIN'].map(r => `<option value="${r}" ${u.rol===r?'selected':''}>${r}</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Área</label>
+              <select id="admUsrArea" class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-slate-50">
+                <option value="">-- Sin área / Global --</option>
+                ${areas.map(a => `<option value="${a.id}" ${u.area_id===a.id?'selected':''}>${a.nombre}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-bold uppercase text-slate-600 mb-1">${id ? 'Nueva Contraseña (dejar vacío para no cambiar)' : 'Contraseña inicial *'}</label>
+            <input id="admUsrPass" type="password" ${id ? '' : 'required'} placeholder="••••••••" class="w-full px-3 py-2 rounded-xl border border-slate-300" />
+          </div>
+          ${id ? `<label class="flex items-center gap-2 text-xs font-semibold"><input id="admUsrActivo" type="checkbox" ${this.isTrue(u.activo)?'checked':''} /> Usuario activo</label>` : ''}
+          <div class="flex justify-end gap-2 pt-2">
+            <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl border border-slate-300 font-semibold">Cancelar</button>
+            <button type="submit" class="px-5 py-2 rounded-xl bg-amber-500 text-slate-950 font-bold">Guardar Usuario</button>
+          </div>
+        </form>
+      `;
+      document.getElementById('modalRoot').classList.remove('hidden');
+    },
+
+    async saveUsuario(e, id) {
+      e.preventDefault();
+      await this.runSave('apiAdminSaveUsuario', {
+        id: id || undefined,
+        empresa_id: this.selectedEmpresaId,
+        nombre: document.getElementById('admUsrNombre').value,
+        usuario: document.getElementById('admUsrLogin').value,
+        rol: document.getElementById('admUsrRol').value,
+        area_id: document.getElementById('admUsrArea').value,
+        password: document.getElementById('admUsrPass').value || undefined,
+        activo: id ? document.getElementById('admUsrActivo').checked : true
+      });
+    },
+
+    async runSave(fnName, payload, onOk) {
+      closeModal();
+      document.getElementById('loadingOverlay').classList.remove('hidden');
+      try {
+        const res = await ApiClient.call(fnName, AppState.token, payload);
+        if (onOk) onOk(res);
+        showToast('Guardado correctamente', 'success');
+        await this.loadAndRender(document.getElementById('mainContent'));
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        document.getElementById('loadingOverlay').classList.add('hidden');
+      }
+    }
+  };
+</script>
