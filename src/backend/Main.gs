@@ -157,3 +157,63 @@ function apiUploadEvidence(token, payload) {
     return errorResponse(err);
   }
 }
+
+/**
+ * Endpoint RPC: Dashboard del Módulo 2 (Auditorías 5S).
+ */
+function apiGetAuditDashboard(token) {
+  try {
+    var user = requireSession(token);
+    return okResponse(audGetDashboardData(user));
+  } catch (err) {
+    return errorResponse(err);
+  }
+}
+
+/**
+ * Endpoint RPC: Crear nueva auditoría 5S.
+ */
+function apiCreateAudit(token, payload) {
+  try {
+    var user = requireSession(token);
+    return okResponse(audCreate(user, payload));
+  } catch (err) {
+    return errorResponse(err);
+  }
+}
+
+/**
+ * Endpoint RPC: Obtener detalle de auditoría y criterios.
+ */
+function apiGetAuditDetail(token, auditoriaId) {
+  try {
+    var user = requireSession(token);
+    return okResponse(audGetDetail(user, auditoriaId));
+  } catch (err) {
+    return errorResponse(err);
+  }
+}
+
+/**
+ * Endpoint RPC: Finalizar auditoría 5S y generar NC si aplica.
+ */
+function apiFinalizeAudit(token, payload) {
+  try {
+    var user = requireSession(token);
+    return okResponse(audFinalize(user, payload));
+  } catch (err) {
+    return errorResponse(err);
+  }
+}
+
+/**
+ * Endpoint RPC: KPIs consolidados de Calidad.
+ */
+function apiGetKpis(token) {
+  try {
+    var user = requireSession(token);
+    return okResponse(kpiGetSummary(user));
+  } catch (err) {
+    return errorResponse(err);
+  }
+}

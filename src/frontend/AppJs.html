@@ -152,7 +152,7 @@
     } else if (view === 'snc') {
       SncUI.loadAndRender(container);
     } else if (view === 'auditorias') {
-      container.innerHTML = renderModulePlaceholder('Módulo 2 — Auditorías 5S e ISO', 'Listo para construir en el Paso 6 (Checklist móvil 5S, puntaje automático y generación directa de SNC).');
+      AuditUI.loadAndRender(container);
     } else if (view === 'futuros') {
       container.innerHTML = renderFutureRoadmap();
     }
@@ -161,7 +161,10 @@
   async function renderDashboard(container) {
     container.innerHTML = '<div class="bg-white rounded-2xl p-8 border border-slate-200 text-center text-sm text-slate-500">Cargando tablero de calidad...</div>';
     try {
-      const sncData = await ApiClient.call('apiGetSncDashboard', AppState.token);
+      const [sncData, kpis] = await Promise.all([
+        ApiClient.call('apiGetSncDashboard', AppState.token),
+        ApiClient.call('apiGetKpis', AppState.token)
+      ]);
       SncUI.data = sncData;
       const c = sncData.counts;
       const rol = AppState.user.rol;
@@ -208,6 +211,33 @@
               <p class="text-3xl font-extrabold font-mono-code text-slate-900 mt-2">${card.count}</p>
             </div>
           `).join('')}
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 mb-6">
+          <div class="bg-slate-900 text-white rounded-2xl p-4 flex items-center justify-between">
+            <div>
+              <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Eficacia de Cierres</p>
+              <p class="text-2xl font-extrabold font-mono-code text-emerald-400 mt-1">${kpis.eficaciaPct}%</p>
+              <p class="text-[11px] text-slate-400">${kpis.cerradas} cerradas de ${kpis.totalHallazgos}</p>
+            </div>
+            <span class="text-xs font-bold px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300">ISO §10.2</span>
+          </div>
+          <div class="bg-slate-900 text-white rounded-2xl p-4 flex items-center justify-between">
+            <div>
+              <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Costo No Calidad</p>
+              <p class="text-2xl font-extrabold font-mono-code text-amber-400 mt-1">$${Number(kpis.totalCosto || 0).toLocaleString()}</p>
+              <p class="text-[11px] text-slate-400">Acumulado registrado</p>
+            </div>
+            <span class="text-xs font-bold px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300">COPQ</span>
+          </div>
+          <div onclick="navigateTo('auditorias')" class="bg-slate-900 text-white rounded-2xl p-4 flex items-center justify-between cursor-pointer hover:bg-slate-800 transition">
+            <div>
+              <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Promedio Global 5S</p>
+              <p class="text-2xl font-extrabold font-mono-code text-sky-400 mt-1">${kpis.promedio5s}%</p>
+              <p class="text-[11px] text-slate-400">${kpis.totalAuditorias} auditorías finalizadas</p>
+            </div>
+            <span class="text-xs font-bold px-2.5 py-1 rounded-lg bg-sky-500/20 text-sky-300">5S</span>
+          </div>
         </div>
 
         <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">

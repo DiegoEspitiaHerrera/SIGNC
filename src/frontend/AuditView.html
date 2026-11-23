@@ -1,0 +1,253 @@
+<script>
+  const AuditUI = {
+    data: { plantillas: [], auditorias: [] },
+    current: null,
+    draftAnswers: {},
+
+    async loadAndRender(container) {
+      container.innerHTML = '<div class="bg-white rounded-2xl p-8 border border-slate-200 text-center text-sm text-slate-500">Cargando auditorías 5S...</div>';
+      try {
+        this.data = await ApiClient.call('apiGetAuditDashboard', AppState.token);
+        this.renderList(container);
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    },
+
+    renderList(container) {
+      const list = this.data.auditorias;
+      container.innerHTML = `
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+          <div>
+            <h2 class="text-xl md:text-2xl font-extrabold text-slate-900 tracking-tight">Auditorías 5S e ISO</h2>
+            <p class="text-xs text-slate-500">Evaluación en planta por área con puntaje automático y generación de No Conformidades.</p>
+          </div>
+          <button onclick="AuditUI.openCreateModal()" class="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-sm shadow-sm transition">
+            + Nueva Auditoría 5S
+          </button>
+        </div>
+
+        ${list.length === 0 ? `
+          <div class="bg-white rounded-2xl border border-slate-200 p-10 text-center">
+            <p class="text-sm font-semibold text-slate-700">Aún no hay auditorías registradas</p>
+            <p class="text-xs text-slate-500 mt-1">Inicia una auditoría 5S en planta desde tu celular, tablet o PC.</p>
+          </div>
+        ` : `
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            ${list.map(a => {
+              const pct = Number(a.porcentaje) || 0;
+              const barColor = pct >= 85 ? 'bg-emerald-500' : pct >= 65 ? 'bg-amber-500' : 'bg-rose-500';
+              return `
+                <div onclick="AuditUI.openDetail('${a.id}')" class="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs hover:shadow-md transition cursor-pointer space-y-3">
+                  <div class="flex items-center justify-between">
+                    <span class="font-mono-code text-sm font-bold text-slate-900">${a.consecutivo}</span>
+                    <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold ${a.estado === 'FINALIZADA' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-sky-50 text-sky-700 border border-sky-200'}">${a.estado}</span>
+                  </div>
+                  <div>
+                    <p class="text-sm font-bold text-slate-800">${SncUI.getAreaName(a.area_id)}</p>
+                    <p class="text-xs text-slate-500">Auditor: ${SncUI.getUserName(a.auditor_id)} · ${a.fecha_ejecucion || a.fecha_programada}</p>
+                  </div>
+                  <div>
+                    <div class="flex justify-between text-xs font-semibold mb-1">
+                      <span class="text-slate-500">Cumplimiento 5S</span>
+                      <span class="font-mono-code text-slate-900">${pct}%</span>
+                    </div>
+                    <div class="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                      <div class="h-full ${barColor}" style="width: ${pct}%"></div>
+                    </div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `}
+      `;
+    },
+
+    openCreateModal() {
+      const card = document.getElementById('modalCard');
+      card.innerHTML = `
+        <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+          <h3 class="font-bold text-base">Iniciar Auditoría 5S</h3>
+          <button onclick="closeModal()" class="text-slate-400 hover:text-white text-lg">&times;</button>
+        </div>
+        <form onsubmit="AuditUI.submitCreate(event)" class="p-6 space-y-4 text-sm">
+          <div>
+            <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Plantilla</label>
+            <select id="audPlt" required class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-slate-50">
+              ${this.data.plantillas.map(p => `<option value="${p.id}">${p.nombre} (v${p.version})</option>`).join('')}
+            </select>
+          </div>
+          <div class="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Área a Auditar</label>
+              <select id="audArea" required class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-slate-50">
+                ${AppState.areas.map(a => `<option value="${a.id}">${a.nombre}</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Responsable del Área</label>
+              <select id="audResp" class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-slate-50">
+                <option value="">-- Seleccionar --</option>
+                ${AppState.usuarios.map(u => `<option value="${u.id}">${u.nombre}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="flex justify-end gap-2 pt-3">
+            <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 font-semibold">Cancelar</button>
+            <button type="submit" class="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold">Comenzar Checklist</button>
+          </div>
+        </form>
+      `;
+      document.getElementById('modalRoot').classList.remove('hidden');
+    },
+
+    async submitCreate(e) {
+      e.preventDefault();
+      const payload = {
+        plantilla_id: document.getElementById('audPlt').value,
+        area_id: document.getElementById('audArea').value,
+        responsable_area_id: document.getElementById('audResp').value
+      };
+      closeModal();
+      document.getElementById('loadingOverlay').classList.remove('hidden');
+      try {
+        const created = await ApiClient.call('apiCreateAudit', AppState.token, payload);
+        await this.openDetail(created.id);
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        document.getElementById('loadingOverlay').classList.add('hidden');
+      }
+    },
+
+    async openDetail(auditoriaId) {
+      document.getElementById('loadingOverlay').classList.remove('hidden');
+      try {
+        this.current = await ApiClient.call('apiGetAuditDetail', AppState.token, auditoriaId);
+        this.draftAnswers = {};
+        if (this.current.respuestas.length > 0) {
+          this.current.respuestas.forEach(r => {
+            this.draftAnswers[r.criterio_id] = {
+              criterio_id: r.criterio_id,
+              cumple: r.cumple,
+              observacion: r.observacion || '',
+              generar_snc: Boolean(r.hallazgo_snc_id),
+              hallazgo_snc_id: r.hallazgo_snc_id
+            };
+          });
+        } else {
+          this.current.criterios.forEach(c => {
+            this.draftAnswers[c.id] = { criterio_id: c.id, cumple: 'SI', observacion: '', generar_snc: false };
+          });
+        }
+        this.renderChecklist(document.getElementById('mainContent'));
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        document.getElementById('loadingOverlay').classList.add('hidden');
+      }
+    },
+
+    setAnswer(criterioId, val) {
+      this.draftAnswers[criterioId].cumple = val;
+      if (val !== 'NO') this.draftAnswers[criterioId].generar_snc = false;
+      this.renderChecklist(document.getElementById('mainContent'));
+    },
+
+    renderChecklist(container) {
+      const a = this.current.auditoria;
+      const isFinal = a.estado === 'FINALIZADA';
+      let obt = 0, max = 0;
+      this.current.criterios.forEach(c => {
+        const ans = this.draftAnswers[c.id];
+        const p = Number(c.puntaje_max) || 0;
+        if (ans.cumple === 'SI') { obt += p; max += p; }
+        else if (ans.cumple === 'NO') { max += p; }
+      });
+      const livePct = max > 0 ? Math.round((obt / max) * 100) : 0;
+
+      container.innerHTML = `
+        <div class="mb-4 flex items-center justify-between">
+          <button onclick="AuditUI.loadAndRender(document.getElementById('mainContent'))" class="text-xs font-bold text-slate-600 hover:text-slate-900">← Volver a Auditorías</button>
+          <span class="font-mono-code text-sm font-bold px-3 py-1 rounded-xl bg-slate-900 text-amber-400">Puntaje: ${isFinal ? a.porcentaje : livePct}%</span>
+        </div>
+
+        <div class="bg-white rounded-2xl border border-slate-200 p-5 mb-5">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <span class="font-mono-code text-base font-extrabold text-slate-900">${a.consecutivo}</span>
+              <h2 class="text-lg font-bold text-slate-800">Área: ${SncUI.getAreaName(a.area_id)}</h2>
+            </div>
+            <span class="px-3 py-1 rounded-full text-xs font-bold ${isFinal ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-sky-50 text-sky-700 border border-sky-200'}">${a.estado}</span>
+          </div>
+        </div>
+
+        <div class="space-y-3 mb-6">
+          ${this.current.criterios.map(c => {
+            const ans = this.draftAnswers[c.id];
+            return `
+              <div class="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <span class="inline-block text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded bg-slate-900 text-amber-400 mb-1">${c.categoria}</span>
+                    <p class="text-sm font-semibold text-slate-800">${c.pregunta}</p>
+                  </div>
+                  <div class="flex gap-1.5 shrink-0">
+                    ${['SI', 'NO', 'NA'].map(opt => `
+                      <button type="button" ${isFinal ? 'disabled' : ''} onclick="AuditUI.setAnswer('${c.id}', '${opt}')"
+                        class="px-3.5 py-2 rounded-xl text-xs font-bold border transition ${
+                          ans.cumple === opt
+                            ? (opt === 'SI' ? 'bg-emerald-600 text-white border-emerald-600' : opt === 'NO' ? 'bg-rose-600 text-white border-rose-600' : 'bg-slate-700 text-white border-slate-700')
+                            : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                        }">${opt === 'SI' ? 'SÍ' : opt === 'NA' ? 'N/A' : 'NO'}</button>
+                    `).join('')}
+                  </div>
+                </div>
+                <div class="grid sm:grid-cols-2 gap-3 items-center">
+                  <input type="text" ${isFinal ? 'disabled' : ''} value="${ans.observacion}"
+                    oninput="AuditUI.draftAnswers['${c.id}'].observacion = this.value"
+                    placeholder="Observación del hallazgo (opcional)"
+                    class="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-slate-50" />
+                  ${ans.cumple === 'NO' ? `
+                    <label class="flex items-center gap-2 text-xs font-semibold text-rose-700 cursor-pointer">
+                      <input type="checkbox" ${isFinal ? 'disabled' : ''} ${ans.generar_snc ? 'checked' : ''}
+                        onchange="AuditUI.draftAnswers['${c.id}'].generar_snc = this.checked" class="rounded text-rose-600" />
+                      <span>${isFinal && ans.hallazgo_snc_id ? 'NC generada automáticamente' : 'Generar No Conformidad automática al finalizar'}</span>
+                    </label>
+                  ` : ''}
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+
+        ${!isFinal ? `
+          <div class="flex justify-end">
+            <button onclick="AuditUI.finalize()" class="px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-extrabold text-sm shadow-md">
+              Finalizar Auditoría (${livePct}%)
+            </button>
+          </div>
+        ` : ''}
+      `;
+    },
+
+    async finalize() {
+      const a = this.current.auditoria;
+      const respuestas = Object.values(this.draftAnswers);
+      document.getElementById('loadingOverlay').classList.remove('hidden');
+      try {
+        const res = await ApiClient.call('apiFinalizeAudit', AppState.token, { auditoria_id: a.id, respuestas: respuestas });
+        const msg = res.generatedSncs.length > 0
+          ? `Auditoría finalizada (${res.auditoria.porcentaje}%). NC creadas: ${res.generatedSncs.join(', ')}`
+          : `Auditoría finalizada con ${res.auditoria.porcentaje}%`;
+        showToast(msg, 'success');
+        await this.openDetail(a.id);
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        document.getElementById('loadingOverlay').classList.add('hidden');
+      }
+    }
+  };
+</script>
