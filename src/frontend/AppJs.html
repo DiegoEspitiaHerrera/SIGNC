@@ -1,0 +1,243 @@
+<script>
+  const TOKEN_KEY = 'signc_session_token';
+
+  const AppState = {
+    token: sessionStorage.getItem(TOKEN_KEY) || null,
+    user: null,
+    empresa: null,
+    areas: [],
+    procesos: [],
+    catalogos: [],
+    usuarios: [],
+    currentView: 'dashboard'
+  };
+
+  /**
+   * Wrapper Promise sobre google.script.run con manejo uniforme de errores.
+   */
+  const ApiClient = {
+    call(fnName, ...args) {
+      return new Promise((resolve, reject) => {
+        if (typeof google === 'undefined' || !google.script || !google.script.run) {
+          reject(new Error('Entorno Google Apps Script no disponible.'));
+          return;
+        }
+        google.script.run
+          .withSuccessHandler((res) => {
+            if (res && res.ok) {
+              resolve(res.data);
+            } else {
+              const msg = (res && res.error) ? res.error : 'Error inesperado en el servidor.';
+              if (msg.toLowerCase().includes('sesión') && msg.toLowerCase().includes('expirado')) {
+                handleForceLogout();
+              }
+              reject(new Error(msg));
+            }
+          })
+          .withFailureHandler((err) => {
+            reject(new Error(err && err.message ? err.message : 'Error de comunicación con el servidor.'));
+          })[fnName](...args);
+      });
+    }
+  };
+
+  function showToast(message, type = 'info') {
+    const el = document.getElementById('toastBox');
+    const colors = {
+      info: 'bg-slate-800 text-white',
+      success: 'bg-emerald-600 text-white',
+      error: 'bg-rose-600 text-white'
+    };
+    el.className = `fixed bottom-20 md:bottom-6 right-4 left-4 md:left-auto md:w-96 px-4 py-3 rounded-xl shadow-lg text-sm font-medium z-50 transition-opacity ${colors[type] || colors.info}`;
+    el.textContent = message;
+    el.classList.remove('hidden');
+    clearTimeout(window._toastTimer);
+    window._toastTimer = setTimeout(() => el.classList.add('hidden'), 4000);
+  }
+
+  async function handleLoginSubmit(event) {
+    event.preventDefault();
+    const usuario = document.getElementById('loginUsuario').value.trim();
+    const password = document.getElementById('loginPassword').value;
+    const btn = document.getElementById('loginBtn');
+    const errBox = document.getElementById('loginError');
+
+    errBox.classList.add('hidden');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner mr-2"></span> Ingresando...';
+
+    try {
+      const res = await ApiClient.call('apiLogin', usuario, password);
+      AppState.token = res.token;
+      sessionStorage.setItem(TOKEN_KEY, res.token);
+      await loadBootstrap();
+    } catch (err) {
+      errBox.textContent = err.message;
+      errBox.classList.remove('hidden');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Iniciar Sesión';
+    }
+  }
+
+  async function loadBootstrap() {
+    document.getElementById('loginView').classList.add('hidden');
+    document.getElementById('loadingOverlay').classList.remove('hidden');
+    try {
+      const data = await ApiClient.call('apiGetBootstrap', AppState.token);
+      AppState.user = data.user;
+      AppState.empresa = data.empresa;
+      AppState.areas = data.areas;
+      AppState.procesos = data.procesos;
+      AppState.catalogos = data.catalogos;
+      AppState.usuarios = data.usuarios;
+
+      renderShellHeader();
+      document.getElementById('appShell').classList.remove('hidden');
+      navigateTo('dashboard');
+    } catch (err) {
+      handleForceLogout();
+      showToast(err.message, 'error');
+    } finally {
+      document.getElementById('loadingOverlay').classList.add('hidden');
+    }
+  }
+
+  async function handleLogout() {
+    const token = AppState.token;
+    handleForceLogout();
+    if (token) {
+      try { await ApiClient.call('apiLogout', token); } catch (_) {}
+    }
+  }
+
+  function handleForceLogout() {
+    AppState.token = null;
+    AppState.user = null;
+    sessionStorage.removeItem(TOKEN_KEY);
+    document.getElementById('appShell').classList.add('hidden');
+    document.getElementById('loginView').classList.remove('hidden');
+    document.getElementById('loginPassword').value = '';
+  }
+
+  function renderShellHeader() {
+    const u = AppState.user;
+    document.getElementById('headerEmpresa').textContent = AppState.empresa ? AppState.empresa.nombre : '';
+    document.getElementById('headerUserName').textContent = u.nombre;
+    document.getElementById('headerUserRol').textContent = u.rol;
+  }
+
+  function navigateTo(view) {
+    AppState.currentView = view;
+    document.querySelectorAll('[data-nav]').forEach((btn) => {
+      const active = btn.getAttribute('data-nav') === view;
+      btn.classList.toggle('bg-blue-600', active);
+      btn.classList.toggle('text-white', active);
+      btn.classList.toggle('text-slate-600', !active);
+      btn.classList.toggle('hover:bg-slate-100', !active);
+    });
+
+    const container = document.getElementById('mainContent');
+    if (view === 'dashboard') {
+      renderDashboard(container);
+    } else if (view === 'snc') {
+      container.innerHTML = renderModulePlaceholder('Módulo 1 — No Conformidades, AC y OM', 'Listo para conectar en el Paso 5 (Solicitud, Asignación, Desarrollo por Área, Análisis, Revisión Gerencia y Cierre).');
+    } else if (view === 'auditorias') {
+      container.innerHTML = renderModulePlaceholder('Módulo 2 — Auditorías 5S e ISO', 'Listo para conectar en el Paso 6 (Checklist móvil 5S, puntaje automático y generación de SNC).');
+    } else if (view === 'futuros') {
+      container.innerHTML = renderFutureRoadmap();
+    }
+  }
+
+  function renderDashboard(container) {
+    const rol = AppState.user ? AppState.user.rol : '';
+    const cardsByRol = {
+      GERENCIA: [
+        { title: 'Pendientes por Asignar', count: 0, color: 'amber' },
+        { title: 'Por Revisar (Cierre)', count: 0, color: 'blue' },
+        { title: 'Activas en Planta', count: 0, color: 'emerald' },
+        { title: 'Pausadas / Vencidas', count: 0, color: 'rose' }
+      ],
+      COORDINADOR: [
+        { title: 'Por Aceptar (Entrantes)', count: 0, color: 'amber' },
+        { title: 'Por Asignar en mi Área', count: 0, color: 'blue' },
+        { title: 'Activas de mi Equipo', count: 0, color: 'emerald' },
+        { title: 'Mis Solicitadas', count: 0, color: 'slate' }
+      ],
+      DEFAULT: [
+        { title: 'Por Aceptar', count: 0, color: 'amber' },
+        { title: 'Mis Activas', count: 0, color: 'blue' },
+        { title: 'Traslados Solicitados', count: 0, color: 'emerald' },
+        { title: 'Mis Solicitadas', count: 0, color: 'slate' }
+      ]
+    };
+    const cards = cardsByRol[rol] || cardsByRol.DEFAULT;
+
+    container.innerHTML = `
+      <div class="mb-6">
+        <h2 class="text-xl md:text-2xl font-bold text-slate-900">Panel de Control — ${AppState.user.nombre}</h2>
+        <p class="text-sm text-slate-500">Resumen operativo según tu rol (${rol}) en ${AppState.empresa.nombre}</p>
+      </div>
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-6">
+        ${cards.map(c => `
+          <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
+            <p class="text-xs font-medium text-slate-500 uppercase tracking-wide">${c.title}</p>
+            <p class="text-2xl md:text-3xl font-bold text-slate-900 mt-2">${c.count}</p>
+          </div>
+        `).join('')}
+      </div>
+      <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
+        <h3 class="font-semibold text-slate-800 mb-2">Infraestructura Base Activa</h3>
+        <p class="text-sm text-slate-600">Sesión propia verificada, aislamiento por empresa (<strong>${AppState.empresa.id}</strong>) y ${AppState.areas.length} áreas cargadas (${AppState.areas.map(a => a.nombre).join(', ')}).</p>
+      </div>
+    `;
+  }
+
+  function renderModulePlaceholder(title, desc) {
+    return `
+      <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+        <h2 class="text-xl font-bold text-slate-900 mb-2">${title}</h2>
+        <p class="text-sm text-slate-600">${desc}</p>
+      </div>
+    `;
+  }
+
+  function renderFutureRoadmap() {
+    return `
+      <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+        <h2 class="text-xl font-bold text-slate-900">Módulos Escalables (Olas 1–3)</h2>
+        <div class="grid md:grid-cols-3 gap-4 text-sm">
+          <div class="p-4 rounded-xl bg-slate-50 border border-slate-200">
+            <h3 class="font-semibold text-blue-700 mb-2">Ola 1 — Corto Plazo</h3>
+            <ul class="list-disc pl-4 space-y-1 text-slate-600">
+              <li>Metrología y Calibración</li>
+              <li>Recepción MP y Proveedores</li>
+              <li>PQRS / Reclamos de Clientes</li>
+            </ul>
+          </div>
+          <div class="p-4 rounded-xl bg-slate-50 border border-slate-200">
+            <h3 class="font-semibold text-indigo-700 mb-2">Ola 2 — Mediano Plazo</h3>
+            <ul class="list-disc pl-4 space-y-1 text-slate-600">
+              <li>Indicadores y Costos (COPQ)</li>
+              <li>Control Documental e Instructivos</li>
+              <li>Inspección en Proceso y PT</li>
+            </ul>
+          </div>
+          <div class="p-4 rounded-xl bg-slate-50 border border-slate-200">
+            <h3 class="font-semibold text-slate-700 mb-2">Ola 3 — Largo Plazo</h3>
+            <ul class="list-disc pl-4 space-y-1 text-slate-600">
+              <li>Competencias y Calificación</li>
+              <li>Mantenimiento Preventivo (Calidad)</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  window.addEventListener('DOMContentLoaded', () => {
+    if (AppState.token) {
+      loadBootstrap();
+    }
+  });
+</script>

@@ -1,0 +1,28 @@
+<style>
+  :root {
+    --brand-primary: #0f172a;
+    --brand-accent: #2563eb;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: #f1f5f9;
+    color: #0f172a;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .spinner {
+    border: 3px solid rgba(255, 255, 255, 0.3);
+    border-top-color: #ffffff;
+    border-radius: 50%;
+    width: 18px;
+    height: 18px;
+    animation: spin 0.7s linear infinite;
+    display: inline-block;
+  }
+  .spinner-dark {
+    border: 3px solid rgba(15, 23, 42, 0.15);
+    border-top-color: #2563eb;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+</style>
