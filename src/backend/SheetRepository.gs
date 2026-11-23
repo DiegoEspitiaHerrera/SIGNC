@@ -55,6 +55,9 @@ function repoGetAll(sheetName) {
       var key = String(headers[c]).trim();
       if (!key) continue;
       var val = values[r][c];
+      if (val instanceof Date) {
+        val = val.toISOString();
+      }
       if (val !== '' && val !== null && val !== undefined) {
         hasData = true;
       }
@@ -141,7 +144,8 @@ function repoUpdateById(sheetName, id, patch, empresaId) {
         if (patch.hasOwnProperty(key) && patch[key] !== undefined) {
           values[r][c] = patch[key];
         }
-        updatedObj[key] = values[r][c];
+        var cellVal = values[r][c];
+        updatedObj[key] = (cellVal instanceof Date) ? cellVal.toISOString() : cellVal;
       }
       sheet.getRange(r + 1, 1, 1, headers.length).setValues([values[r]]);
       return updatedObj;

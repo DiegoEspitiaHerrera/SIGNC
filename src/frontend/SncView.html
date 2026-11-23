@@ -93,7 +93,7 @@
                     <td class="py-3 px-4 font-mono-code font-semibold text-slate-900 whitespace-nowrap">${h.consecutivo}</td>
                     <td class="py-3 px-4">
                       <p class="font-medium text-slate-800 line-clamp-1">${h.resumen_solicitud}</p>
-                      <span class="text-[11px] text-slate-400">${h.tipo_hallazgo} · ${h.fecha_deteccion}</span>
+                      <span class="text-[11px] text-slate-400">${h.tipo_hallazgo} · ${String(h.fecha_deteccion || '').substring(0, 10)}</span>
                     </td>
                     <td class="py-3 px-4 text-xs">
                       <p class="font-semibold text-slate-700">${this.getAreaName(h.area_asignada_id)}</p>
@@ -259,7 +259,7 @@
               <p class="text-xs text-slate-500 mt-1">Solicita: <strong>${this.getUserName(h.solicitante_id)}</strong> · Área asignada: <strong>${this.getAreaName(h.area_asignada_id)}</strong> · Responsable: <strong>${this.getUserName(h.responsable_actual_id)}</strong></p>
             </div>
             <div class="text-right text-xs text-slate-500">
-              <p>Detección: <span class="font-mono-code font-semibold text-slate-700">${h.fecha_deteccion}</span></p>
+              <p>Detección: <span class="font-mono-code font-semibold text-slate-700">${String(h.fecha_deteccion || '').substring(0, 10)}</span></p>
               <p>Pausa acum.: <span class="font-mono-code font-semibold text-slate-700">${h.tiempo_pausado_min || 0} min</span></p>
             </div>
           </div>
