@@ -12,9 +12,6 @@
     currentView: 'dashboard'
   };
 
-  /**
-   * Wrapper Promise sobre google.script.run con manejo uniforme de errores.
-   */
   const ApiClient = {
     call(fnName, ...args) {
       return new Promise((resolve, reject) => {
@@ -44,15 +41,19 @@
   function showToast(message, type = 'info') {
     const el = document.getElementById('toastBox');
     const colors = {
-      info: 'bg-slate-800 text-white',
+      info: 'bg-slate-900 text-white border border-slate-700',
       success: 'bg-emerald-600 text-white',
       error: 'bg-rose-600 text-white'
     };
-    el.className = `fixed bottom-20 md:bottom-6 right-4 left-4 md:left-auto md:w-96 px-4 py-3 rounded-xl shadow-lg text-sm font-medium z-50 transition-opacity ${colors[type] || colors.info}`;
+    el.className = `fixed bottom-20 md:bottom-6 right-4 left-4 md:left-auto md:w-96 px-4 py-3 rounded-xl shadow-xl text-sm font-medium z-50 ${colors[type] || colors.info}`;
     el.textContent = message;
     el.classList.remove('hidden');
     clearTimeout(window._toastTimer);
     window._toastTimer = setTimeout(() => el.classList.add('hidden'), 4000);
+  }
+
+  function closeModal() {
+    document.getElementById('modalRoot').classList.add('hidden');
   }
 
   async function handleLoginSubmit(event) {
@@ -64,7 +65,7 @@
 
     errBox.classList.add('hidden');
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner mr-2"></span> Ingresando...';
+    btn.innerHTML = '<span class="spinner mr-2"></span> Verificando...';
 
     try {
       const res = await ApiClient.call('apiLogin', usuario, password);
@@ -76,7 +77,7 @@
       errBox.classList.remove('hidden');
     } finally {
       btn.disabled = false;
-      btn.textContent = 'Iniciar Sesión';
+      btn.textContent = 'Ingresar al Sistema';
     }
   }
 
@@ -122,80 +123,123 @@
 
   function renderShellHeader() {
     const u = AppState.user;
-    document.getElementById('headerEmpresa').textContent = AppState.empresa ? AppState.empresa.nombre : '';
-    document.getElementById('headerUserName').textContent = u.nombre;
-    document.getElementById('headerUserRol').textContent = u.rol;
+    const empName = AppState.empresa ? AppState.empresa.nombre : '';
+    document.getElementById('sidebarEmpresa').textContent = empName;
+    document.getElementById('sidebarUserName').textContent = u.nombre;
+    document.getElementById('sidebarUserRol').textContent = u.rol;
+    document.getElementById('mobileEmpresa').textContent = empName;
+    document.getElementById('mobileUserRol').textContent = u.rol;
   }
 
   function navigateTo(view) {
     AppState.currentView = view;
-    document.querySelectorAll('[data-nav]').forEach((btn) => {
+    document.querySelectorAll('.nav-btn').forEach((btn) => {
       const active = btn.getAttribute('data-nav') === view;
-      btn.classList.toggle('bg-blue-600', active);
-      btn.classList.toggle('text-white', active);
-      btn.classList.toggle('text-slate-600', !active);
-      btn.classList.toggle('hover:bg-slate-100', !active);
+      btn.className = `nav-btn w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition ${
+        active ? 'bg-slate-800 text-amber-400 border-l-4 border-amber-500' : 'text-slate-300 hover:bg-slate-800/60 hover:text-white'
+      }`;
+    });
+    document.querySelectorAll('.nav-btn-mobile').forEach((btn) => {
+      const active = btn.getAttribute('data-nav') === view;
+      btn.className = `nav-btn-mobile py-2 rounded-lg text-[11px] font-semibold text-center ${
+        active ? 'bg-slate-800 text-amber-400' : 'text-slate-400'
+      }`;
     });
 
     const container = document.getElementById('mainContent');
     if (view === 'dashboard') {
       renderDashboard(container);
     } else if (view === 'snc') {
-      container.innerHTML = renderModulePlaceholder('Módulo 1 — No Conformidades, AC y OM', 'Listo para conectar en el Paso 5 (Solicitud, Asignación, Desarrollo por Área, Análisis, Revisión Gerencia y Cierre).');
+      SncUI.loadAndRender(container);
     } else if (view === 'auditorias') {
-      container.innerHTML = renderModulePlaceholder('Módulo 2 — Auditorías 5S e ISO', 'Listo para conectar en el Paso 6 (Checklist móvil 5S, puntaje automático y generación de SNC).');
+      container.innerHTML = renderModulePlaceholder('Módulo 2 — Auditorías 5S e ISO', 'Listo para construir en el Paso 6 (Checklist móvil 5S, puntaje automático y generación directa de SNC).');
     } else if (view === 'futuros') {
       container.innerHTML = renderFutureRoadmap();
     }
   }
 
-  function renderDashboard(container) {
-    const rol = AppState.user ? AppState.user.rol : '';
-    const cardsByRol = {
-      GERENCIA: [
-        { title: 'Pendientes por Asignar', count: 0, color: 'amber' },
-        { title: 'Por Revisar (Cierre)', count: 0, color: 'blue' },
-        { title: 'Activas en Planta', count: 0, color: 'emerald' },
-        { title: 'Pausadas / Vencidas', count: 0, color: 'rose' }
-      ],
-      COORDINADOR: [
-        { title: 'Por Aceptar (Entrantes)', count: 0, color: 'amber' },
-        { title: 'Por Asignar en mi Área', count: 0, color: 'blue' },
-        { title: 'Activas de mi Equipo', count: 0, color: 'emerald' },
-        { title: 'Mis Solicitadas', count: 0, color: 'slate' }
-      ],
-      DEFAULT: [
-        { title: 'Por Aceptar', count: 0, color: 'amber' },
-        { title: 'Mis Activas', count: 0, color: 'blue' },
-        { title: 'Traslados Solicitados', count: 0, color: 'emerald' },
-        { title: 'Mis Solicitadas', count: 0, color: 'slate' }
-      ]
-    };
-    const cards = cardsByRol[rol] || cardsByRol.DEFAULT;
+  async function renderDashboard(container) {
+    container.innerHTML = '<div class="bg-white rounded-2xl p-8 border border-slate-200 text-center text-sm text-slate-500">Cargando tablero de calidad...</div>';
+    try {
+      const sncData = await ApiClient.call('apiGetSncDashboard', AppState.token);
+      SncUI.data = sncData;
+      const c = sncData.counts;
+      const rol = AppState.user.rol;
 
-    container.innerHTML = `
-      <div class="mb-6">
-        <h2 class="text-xl md:text-2xl font-bold text-slate-900">Panel de Control — ${AppState.user.nombre}</h2>
-        <p class="text-sm text-slate-500">Resumen operativo según tu rol (${rol}) en ${AppState.empresa.nombre}</p>
-      </div>
-      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-6">
-        ${cards.map(c => `
-          <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
-            <p class="text-xs font-medium text-slate-500 uppercase tracking-wide">${c.title}</p>
-            <p class="text-2xl md:text-3xl font-bold text-slate-900 mt-2">${c.count}</p>
+      const cardsByRol = {
+        GERENCIA: [
+          { title: 'Por Asignar', count: c.porAsignar, accent: 'border-l-amber-500', filtro: 'PENDIENTE' },
+          { title: 'Por Revisar (Cierre)', count: c.porRevisar, accent: 'border-l-sky-500', filtro: 'ACTIVA' },
+          { title: 'Activas en Planta', count: c.activas, accent: 'border-l-emerald-500', filtro: 'ACTIVA' },
+          { title: 'Pausadas', count: c.pausadas, accent: 'border-l-purple-500', filtro: 'PAUSADA' }
+        ],
+        COORDINADOR: [
+          { title: 'Por Aceptar', count: c.porAceptar, accent: 'border-l-amber-500', filtro: 'PENDIENTE' },
+          { title: 'Por Asignar', count: c.porAsignar, accent: 'border-l-sky-500', filtro: 'PENDIENTE' },
+          { title: 'Activas de mi Área', count: c.activas, accent: 'border-l-emerald-500', filtro: 'ACTIVA' },
+          { title: 'Mis Solicitadas', count: c.misSolicitadas, accent: 'border-l-slate-500', filtro: 'TODOS' }
+        ],
+        DEFAULT: [
+          { title: 'Por Aceptar', count: c.porAceptar, accent: 'border-l-amber-500', filtro: 'PENDIENTE' },
+          { title: 'Mis Activas', count: c.activas, accent: 'border-l-emerald-500', filtro: 'ACTIVA' },
+          { title: 'Pausadas', count: c.pausadas, accent: 'border-l-purple-500', filtro: 'PAUSADA' },
+          { title: 'Mis Solicitadas', count: c.misSolicitadas, accent: 'border-l-slate-500', filtro: 'TODOS' }
+        ]
+      };
+      const cards = cardsByRol[rol] || cardsByRol.DEFAULT;
+
+      container.innerHTML = `
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+          <div>
+            <h2 class="text-xl md:text-2xl font-extrabold text-slate-900 tracking-tight">Hola, ${AppState.user.nombre}</h2>
+            <p class="text-xs text-slate-500">Panel operativo · <strong>${AppState.empresa.nombre}</strong> · Rol: <span class="font-semibold text-amber-700">${rol}</span></p>
           </div>
-        `).join('')}
-      </div>
-      <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-        <h3 class="font-semibold text-slate-800 mb-2">Infraestructura Base Activa</h3>
-        <p class="text-sm text-slate-600">Sesión propia verificada, aislamiento por empresa (<strong>${AppState.empresa.id}</strong>) y ${AppState.areas.length} áreas cargadas (${AppState.areas.map(a => a.nombre).join(', ')}).</p>
-      </div>
-    `;
+          <button onclick="navigateTo('snc'); setTimeout(() => SncUI.openCreateModal(), 250);"
+            class="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-sm shadow-sm transition">
+            + Reportar NC / Mejora
+          </button>
+        </div>
+
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-6">
+          ${cards.map(card => `
+            <div onclick="SncUI.filter.estado='${card.filtro}'; navigateTo('snc');"
+              class="bg-white rounded-2xl p-4 border border-slate-200 border-l-4 ${card.accent} shadow-xs hover:shadow-md transition cursor-pointer">
+              <p class="text-[11px] font-bold uppercase tracking-wider text-slate-500">${card.title}</p>
+              <p class="text-3xl font-extrabold font-mono-code text-slate-900 mt-2">${card.count}</p>
+            </div>
+          `).join('')}
+        </div>
+
+        <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="font-bold text-slate-900 text-sm">Expedientes Recientes</h3>
+            <button onclick="navigateTo('snc')" class="text-xs font-bold text-amber-600 hover:text-amber-700">Ver todos →</button>
+          </div>
+          ${sncData.hallazgos.length === 0 ? `
+            <p class="text-sm text-slate-500 py-4">Aún no hay Salidas No Conformes registradas. Usa el botón <strong>+ Reportar NC / Mejora</strong> para crear la primera.</p>
+          ` : `
+            <div class="divide-y divide-slate-100">
+              ${sncData.hallazgos.slice(0, 5).map(h => `
+                <div onclick="navigateTo('snc'); SncUI.openDetail('${h.id}');" class="py-3 flex items-center justify-between gap-3 hover:bg-slate-50 px-2 rounded-xl cursor-pointer">
+                  <div class="min-w-0">
+                    <p class="text-sm font-semibold text-slate-800 truncate"><span class="font-mono-code text-xs text-slate-500 mr-2">${h.consecutivo}</span>${h.resumen_solicitud}</p>
+                    <p class="text-xs text-slate-400">${SncUI.getAreaName(h.area_asignada_id)} · ${h.fase_actual}</p>
+                  </div>
+                  ${SncUI.badgeEstado(h.estado_actual)}
+                </div>
+              `).join('')}
+            </div>
+          `}
+        </div>
+      `;
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
   }
 
   function renderModulePlaceholder(title, desc) {
     return `
-      <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+      <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs">
         <h2 class="text-xl font-bold text-slate-900 mb-2">${title}</h2>
         <p class="text-sm text-slate-600">${desc}</p>
       </div>
@@ -204,11 +248,11 @@
 
   function renderFutureRoadmap() {
     return `
-      <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
-        <h2 class="text-xl font-bold text-slate-900">Módulos Escalables (Olas 1–3)</h2>
+      <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-4">
+        <h2 class="text-xl font-extrabold text-slate-900">Módulos Escalables (Olas 1–3)</h2>
         <div class="grid md:grid-cols-3 gap-4 text-sm">
           <div class="p-4 rounded-xl bg-slate-50 border border-slate-200">
-            <h3 class="font-semibold text-blue-700 mb-2">Ola 1 — Corto Plazo</h3>
+            <h3 class="font-bold text-amber-700 mb-2">Ola 1 — Corto Plazo</h3>
             <ul class="list-disc pl-4 space-y-1 text-slate-600">
               <li>Metrología y Calibración</li>
               <li>Recepción MP y Proveedores</li>
@@ -216,7 +260,7 @@
             </ul>
           </div>
           <div class="p-4 rounded-xl bg-slate-50 border border-slate-200">
-            <h3 class="font-semibold text-indigo-700 mb-2">Ola 2 — Mediano Plazo</h3>
+            <h3 class="font-bold text-sky-700 mb-2">Ola 2 — Mediano Plazo</h3>
             <ul class="list-disc pl-4 space-y-1 text-slate-600">
               <li>Indicadores y Costos (COPQ)</li>
               <li>Control Documental e Instructivos</li>
@@ -224,7 +268,7 @@
             </ul>
           </div>
           <div class="p-4 rounded-xl bg-slate-50 border border-slate-200">
-            <h3 class="font-semibold text-slate-700 mb-2">Ola 3 — Largo Plazo</h3>
+            <h3 class="font-bold text-slate-700 mb-2">Ola 3 — Largo Plazo</h3>
             <ul class="list-disc pl-4 space-y-1 text-slate-600">
               <li>Competencias y Calificación</li>
               <li>Mantenimiento Preventivo (Calidad)</li>

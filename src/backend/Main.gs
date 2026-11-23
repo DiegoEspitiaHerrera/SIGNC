@@ -83,3 +83,77 @@ function apiGetBootstrap(token) {
     return errorResponse(err);
   }
 }
+
+/**
+ * Endpoint RPC: Dashboard y lista de SNC visibles según rol.
+ * @param {string} token
+ * @return {Object}
+ */
+function apiGetSncDashboard(token) {
+  try {
+    var user = requireSession(token);
+    return okResponse(sncGetDashboardData(user));
+  } catch (err) {
+    return errorResponse(err);
+  }
+}
+
+/**
+ * Endpoint RPC: Expediente completo de una NC/OM.
+ * @param {string} token
+ * @param {string} hallazgoId
+ * @return {Object}
+ */
+function apiGetSncDetail(token, hallazgoId) {
+  try {
+    var user = requireSession(token);
+    return okResponse(sncGetDetail(user, hallazgoId));
+  } catch (err) {
+    return errorResponse(err);
+  }
+}
+
+/**
+ * Endpoint RPC: Crear nueva solicitud de NC/OM.
+ * @param {string} token
+ * @param {Object} payload
+ * @return {Object}
+ */
+function apiCreateSnc(token, payload) {
+  try {
+    var user = requireSession(token);
+    return okResponse(sncCreate(user, payload));
+  } catch (err) {
+    return errorResponse(err);
+  }
+}
+
+/**
+ * Endpoint RPC: Ejecutar transición o acción sobre una NC/OM.
+ * @param {string} token
+ * @param {Object} payload
+ * @return {Object}
+ */
+function apiSncAction(token, payload) {
+  try {
+    var user = requireSession(token);
+    return okResponse(sncExecuteAction(user, payload));
+  } catch (err) {
+    return errorResponse(err);
+  }
+}
+
+/**
+ * Endpoint RPC: Subir evidencia en base64 a Google Drive.
+ * @param {string} token
+ * @param {Object} payload
+ * @return {Object}
+ */
+function apiUploadEvidence(token, payload) {
+  try {
+    var user = requireSession(token);
+    return okResponse(driveUploadEvidence(user, payload));
+  } catch (err) {
+    return errorResponse(err);
+  }
+}

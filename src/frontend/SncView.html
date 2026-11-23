@@ -1,0 +1,464 @@
+<script>
+  const SncUI = {
+    data: { counts: {}, hallazgos: [] },
+    filter: { search: '', fase: 'TODAS', estado: 'TODOS' },
+    currentDetail: null,
+
+    async loadAndRender(container, presetEstado) {
+      if (presetEstado) this.filter.estado = presetEstado;
+      container.innerHTML = '<div class="bg-white rounded-2xl p-8 border border-slate-200 text-center text-sm text-slate-500">Cargando expedientes...</div>';
+      try {
+        this.data = await ApiClient.call('apiGetSncDashboard', AppState.token);
+        this.renderList(container);
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    },
+
+    getAreaName(id) {
+      const a = AppState.areas.find(x => x.id === id);
+      return a ? a.nombre : '—';
+    },
+
+    getUserName(id) {
+      const u = AppState.usuarios.find(x => x.id === id);
+      return u ? u.nombre : 'Sin asignar';
+    },
+
+    badgeEstado(estado) {
+      const map = {
+        PENDIENTE: 'bg-amber-50 text-amber-700 border-amber-200',
+        ACTIVA: 'bg-sky-50 text-sky-700 border-sky-200',
+        PAUSADA: 'bg-purple-50 text-purple-700 border-purple-200',
+        CERRADA: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+        ANULADA: 'bg-slate-100 text-slate-500 border-slate-200'
+      };
+      return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${map[estado] || 'bg-slate-100 text-slate-600'}">${estado}</span>`;
+    },
+
+    renderList(container) {
+      const q = this.filter.search.toLowerCase();
+      const filtered = this.data.hallazgos.filter(h => {
+        if (this.filter.fase !== 'TODAS' && h.fase_actual !== this.filter.fase) return false;
+        if (this.filter.estado !== 'TODOS' && h.estado_actual !== this.filter.estado) return false;
+        if (q && !`${h.consecutivo} ${h.resumen_solicitud} ${this.getAreaName(h.area_asignada_id)}`.toLowerCase().includes(q)) return false;
+        return true;
+      });
+
+      container.innerHTML = `
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+          <div>
+            <h2 class="text-xl md:text-2xl font-extrabold text-slate-900 tracking-tight">Salidas No Conformes y Mejoras</h2>
+            <p class="text-xs text-slate-500">Gestión de expedientes, análisis de causa raíz, planes de acción y costos.</p>
+          </div>
+          <button onclick="SncUI.openCreateModal()" class="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-sm shadow-sm transition flex items-center justify-center gap-2">
+            <span>+ Nueva Solicitud</span>
+          </button>
+        </div>
+
+        <div class="bg-white rounded-2xl border border-slate-200 p-3.5 mb-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+          <input type="text" value="${this.filter.search}" oninput="SncUI.filter.search=this.value; SncUI.renderList(document.getElementById('mainContent'))"
+            placeholder="Buscar consecutivo, resumen o área..." class="px-3.5 py-2 rounded-xl border border-slate-200 text-sm bg-slate-50 focus:bg-white outline-none focus:ring-2 focus:ring-amber-500" />
+          <select onchange="SncUI.filter.fase=this.value; SncUI.renderList(document.getElementById('mainContent'))" class="px-3.5 py-2 rounded-xl border border-slate-200 text-sm bg-slate-50">
+            <option value="TODAS" ${this.filter.fase==='TODAS'?'selected':''}>Todas las Fases</option>
+            ${['SOLICITUD','ASIGNACION','DESARROLLO','ANALISIS','REVISION','FINALIZACION'].map(f => `<option value="${f}" ${this.filter.fase===f?'selected':''}>${f}</option>`).join('')}
+          </select>
+          <select onchange="SncUI.filter.estado=this.value; SncUI.renderList(document.getElementById('mainContent'))" class="px-3.5 py-2 rounded-xl border border-slate-200 text-sm bg-slate-50">
+            <option value="TODOS" ${this.filter.estado==='TODOS'?'selected':''}>Todos los Estados</option>
+            ${['PENDIENTE','ACTIVA','PAUSADA','CERRADA','ANULADA'].map(e => `<option value="${e}" ${this.filter.estado===e?'selected':''}>${e}</option>`).join('')}
+          </select>
+        </div>
+
+        ${filtered.length === 0 ? `
+          <div class="bg-white rounded-2xl border border-slate-200 p-10 text-center">
+            <p class="text-sm font-semibold text-slate-700">No hay expedientes con los filtros actuales</p>
+            <p class="text-xs text-slate-500 mt-1">Crea una nueva solicitud o limpia los filtros.</p>
+          </div>
+        ` : `
+          <div class="hidden md:block bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                  <th class="py-3 px-4">Consecutivo</th>
+                  <th class="py-3 px-4">Resumen</th>
+                  <th class="py-3 px-4">Área / Responsable</th>
+                  <th class="py-3 px-4">Fase</th>
+                  <th class="py-3 px-4">Estado</th>
+                  <th class="py-3 px-4 text-right">Acción</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100 text-sm">
+                ${filtered.map(h => `
+                  <tr class="hover:bg-slate-50/80 transition cursor-pointer" onclick="SncUI.openDetail('${h.id}')">
+                    <td class="py-3 px-4 font-mono-code font-semibold text-slate-900 whitespace-nowrap">${h.consecutivo}</td>
+                    <td class="py-3 px-4">
+                      <p class="font-medium text-slate-800 line-clamp-1">${h.resumen_solicitud}</p>
+                      <span class="text-[11px] text-slate-400">${h.tipo_hallazgo} · ${h.fecha_deteccion}</span>
+                    </td>
+                    <td class="py-3 px-4 text-xs">
+                      <p class="font-semibold text-slate-700">${this.getAreaName(h.area_asignada_id)}</p>
+                      <p class="text-slate-500">${this.getUserName(h.responsable_actual_id)}</p>
+                    </td>
+                    <td class="py-3 px-4 text-xs font-semibold text-slate-700">${h.fase_actual}</td>
+                    <td class="py-3 px-4">${this.badgeEstado(h.estado_actual)}</td>
+                    <td class="py-3 px-4 text-right">
+                      <button class="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800">Abrir</button>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="md:hidden space-y-3">
+            ${filtered.map(h => `
+              <div onclick="SncUI.openDetail('${h.id}')" class="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="font-mono-code text-xs font-bold text-slate-900">${h.consecutivo}</span>
+                  ${this.badgeEstado(h.estado_actual)}
+                </div>
+                <p class="text-sm font-semibold text-slate-800">${h.resumen_solicitud}</p>
+                <div class="flex items-center justify-between text-xs text-slate-500 pt-1 border-t border-slate-100">
+                  <span>${this.getAreaName(h.area_asignada_id)}</span>
+                  <span class="font-semibold text-slate-700">${h.fase_actual}</span>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        `}
+      `;
+    },
+
+    openCreateModal() {
+      const card = document.getElementById('modalCard');
+      card.innerHTML = `
+        <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+          <h3 class="font-bold text-base">Nueva Solicitud (NC / Oportunidad de Mejora)</h3>
+          <button onclick="closeModal()" class="text-slate-400 hover:text-white text-lg">&times;</button>
+        </div>
+        <form onsubmit="SncUI.submitCreate(event)" class="p-6 space-y-4 text-sm">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Tipo de Hallazgo</label>
+              <select id="newTipo" required class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-slate-50">
+                <option value="SNC_REAL">Salida No Conforme (Real)</option>
+                <option value="SNC_POTENCIAL">Salida No Conforme (Potencial)</option>
+                <option value="OPORTUNIDAD_MEJORA">Oportunidad de Mejora</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Área donde se identifica</label>
+              <select id="newAreaIden" required class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-slate-50">
+                ${AppState.areas.map(a => `<option value="${a.id}" ${a.id===AppState.user.area_id?'selected':''}>${a.nombre}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Resumen corto y diciente *</label>
+            <input id="newResumen" type="text" required maxlength="180" placeholder="Ej. Lámina calibre 16 con rayaduras en proceso de doblez OP-412"
+              class="w-full px-3.5 py-2 rounded-xl border border-slate-300" />
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-100">
+            <div>
+              <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Asignar a Área (Opcional)</label>
+              <select id="newAreaAsig" class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-slate-50">
+                <option value="">-- Dejar pendiente en Solicitud --</option>
+                ${AppState.areas.map(a => `<option value="${a.id}">${a.nombre}</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Responsable (Opcional)</label>
+              <select id="newResp" class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-slate-50">
+                <option value="">-- Coordinador del área --</option>
+                ${AppState.usuarios.map(u => `<option value="${u.id}">${u.nombre} (${u.rol})</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="flex justify-end gap-2 pt-3">
+            <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 font-semibold">Cancelar</button>
+            <button type="submit" class="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold">Registrar Solicitud</button>
+          </div>
+        </form>
+      `;
+      document.getElementById('modalRoot').classList.remove('hidden');
+    },
+
+    async submitCreate(e) {
+      e.preventDefault();
+      const payload = {
+        tipo_hallazgo: document.getElementById('newTipo').value,
+        area_identifica_id: document.getElementById('newAreaIden').value,
+        resumen_solicitud: document.getElementById('newResumen').value,
+        area_asignada_id: document.getElementById('newAreaAsig').value,
+        responsable_actual_id: document.getElementById('newResp').value
+      };
+      closeModal();
+      document.getElementById('loadingOverlay').classList.remove('hidden');
+      try {
+        const created = await ApiClient.call('apiCreateSnc', AppState.token, payload);
+        showToast(`Expediente ${created.consecutivo} creado`, 'success');
+        await this.openDetail(created.id);
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        document.getElementById('loadingOverlay').classList.add('hidden');
+      }
+    },
+
+    async openDetail(hallazgoId) {
+      document.getElementById('loadingOverlay').classList.remove('hidden');
+      try {
+        this.currentDetail = await ApiClient.call('apiGetSncDetail', AppState.token, hallazgoId);
+        this.renderDetail(document.getElementById('mainContent'));
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        document.getElementById('loadingOverlay').classList.add('hidden');
+      }
+    },
+
+    renderDetail(container) {
+      const d = this.currentDetail;
+      const h = d.hallazgo;
+      const fases = ['SOLICITUD', 'ASIGNACION', 'DESARROLLO', 'ANALISIS', 'REVISION', 'FINALIZACION'];
+      const curIdx = fases.indexOf(h.fase_actual);
+      const areaAsig = AppState.areas.find(a => a.id === h.area_asignada_id);
+      const isProd = areaAsig && (areaAsig.requiere_datos_tecnicos === true || String(areaAsig.requiere_datos_tecnicos).toUpperCase() === 'TRUE');
+      let tec = {};
+      try { tec = JSON.parse(h.datos_tecnicos_json || '{}'); } catch (_) {}
+
+      const canManage = ['GERENCIA', 'COORDINADOR', 'ADMIN'].includes(AppState.user.rol);
+      const isClosed = h.estado_actual === 'CERRADA' || h.estado_actual === 'ANULADA';
+
+      const catByGroup = (g) => AppState.catalogos.filter(c => c.grupo === g);
+
+      container.innerHTML = `
+        <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <button onclick="SncUI.loadAndRender(document.getElementById('mainContent'))" class="text-xs font-bold text-slate-600 hover:text-slate-900 flex items-center gap-1">
+            ← Volver a la bandeja
+          </button>
+          <div class="flex flex-wrap gap-2">
+            ${!isClosed && h.fase_actual === 'ASIGNACION' ? `<button onclick="SncUI.doAction('ACEPTAR')" class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold">✓ Aceptar NC</button>` : ''}
+            ${!isClosed && canManage && h.estado_actual === 'ACTIVA' ? `<button onclick="SncUI.promptAction('PAUSAR','Motivo de la pausa')" class="px-3 py-2 rounded-xl bg-purple-600 text-white text-xs font-bold">Pausar</button>` : ''}
+            ${!isClosed && canManage && h.estado_actual === 'PAUSADA' ? `<button onclick="SncUI.doAction('REANUDAR')" class="px-3 py-2 rounded-xl bg-sky-600 text-white text-xs font-bold">Reanudar</button>` : ''}
+            ${!isClosed && canManage && ['ANALISIS','REVISION'].includes(h.fase_actual) ? `<button onclick="SncUI.promptReturn()" class="px-3 py-2 rounded-xl bg-amber-100 text-amber-800 border border-amber-300 text-xs font-bold">Devolver</button>` : ''}
+            ${!isClosed && (AppState.user.rol === 'GERENCIA' || AppState.user.rol === 'ADMIN') && h.fase_actual === 'REVISION' ? `<button onclick="SncUI.openCloseModal()" class="px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold">Aprobar Cierre</button>` : ''}
+            ${!isClosed && (['GERENCIA','ADMIN'].includes(AppState.user.rol) || h.solicitante_id === AppState.user.id) ? `<button onclick="SncUI.promptAction('ANULAR','Motivo de anulación')" class="px-3 py-2 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 text-xs font-bold">Anular</button>` : ''}
+          </div>
+        </div>
+
+        <!-- Cabecera + Stepper -->
+        <div class="bg-white rounded-2xl border border-slate-200 p-5 mb-5 shadow-xs">
+          <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+            <div>
+              <div class="flex items-center gap-2.5 mb-1">
+                <span class="font-mono-code text-lg font-extrabold text-slate-900">${h.consecutivo}</span>
+                ${this.badgeEstado(h.estado_actual)}
+              </div>
+              <h2 class="text-base md:text-lg font-bold text-slate-800">${h.resumen_solicitud}</h2>
+              <p class="text-xs text-slate-500 mt-1">Solicita: <strong>${this.getUserName(h.solicitante_id)}</strong> · Área asignada: <strong>${this.getAreaName(h.area_asignada_id)}</strong> · Responsable: <strong>${this.getUserName(h.responsable_actual_id)}</strong></p>
+            </div>
+            <div class="text-right text-xs text-slate-500">
+              <p>Detección: <span class="font-mono-code font-semibold text-slate-700">${h.fecha_deteccion}</span></p>
+              <p>Pausa acum.: <span class="font-mono-code font-semibold text-slate-700">${h.tiempo_pausado_min || 0} min</span></p>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-3 sm:grid-cols-6 gap-2 pt-3 border-t border-slate-100">
+            ${fases.map((f, idx) => `
+              <div class="px-2.5 py-2 rounded-xl text-center border text-[11px] font-bold ${idx < curIdx ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : idx === curIdx ? 'bg-slate-900 border-slate-900 text-amber-400' : 'bg-slate-50 border-slate-200 text-slate-400'}">
+                ${idx + 1}. ${f}
+              </div>
+            `).join('')}
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+          <!-- Columna Principal (Desarrollo + Análisis + Planes) -->
+          <div class="lg:col-span-2 space-y-5">
+            ${!isClosed && h.fase_actual === 'SOLICITUD' ? `
+              <div class="bg-white rounded-2xl border border-slate-200 p-5">
+                <h3 class="font-bold text-slate-900 mb-3">Asignar Solicitud</h3>
+                <div class="grid sm:grid-cols-2 gap-3 mb-3">
+                  <select id="asigArea" class="px-3 py-2 rounded-xl border border-slate-300 text-sm">${AppState.areas.map(a => `<option value="${a.id}">${a.nombre}</option>`).join('')}</select>
+                  <select id="asigResp" class="px-3 py-2 rounded-xl border border-slate-300 text-sm"><option value="">-- Coordinador del área --</option>${AppState.usuarios.map(u => `<option value="${u.id}">${u.nombre}</option>`).join('')}</select>
+                </div>
+                <button onclick="SncUI.doAction('ASIGNAR', { area_asignada_id: document.getElementById('asigArea').value, responsable_actual_id: document.getElementById('asigResp').value })" class="px-4 py-2 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs">Enviar a Asignación</button>
+              </div>
+            ` : ''}
+
+            <!-- Desarrollo -->
+            <div class="bg-white rounded-2xl border border-slate-200 p-5">
+              <h3 class="font-bold text-slate-900 mb-3">Desarrollo del Hallazgo ${isProd ? '<span class="ml-2 text-[11px] px-2 py-0.5 rounded bg-amber-100 text-amber-800">Campos Técnicos Producción</span>' : ''}</h3>
+              <div class="space-y-3 text-sm">
+                <textarea id="devDetalle" rows="3" ${isClosed?'disabled':''} placeholder="Describe Qué, Por qué, Cuándo, Cómo, Dónde, Cliente/Proyecto..." class="w-full px-3.5 py-2 rounded-xl border border-slate-300">${h.descripcion_detalle || ''}</textarea>
+                <div class="grid sm:grid-cols-3 gap-3">
+                  <div>
+                    <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1">Origen SNC</label>
+                    <select id="devOrigen" ${isClosed?'disabled':''} class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-slate-50">
+                      <option value="">-- Seleccionar --</option>
+                      ${catByGroup('ORIGEN').map(c => `<option value="${c.valor}" ${h.origen_snc===c.valor?'selected':''}>${c.valor}</option>`).join('')}
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1">Fuente Detección</label>
+                    <select id="devFuente" ${isClosed?'disabled':''} class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-slate-50">
+                      <option value="">-- Seleccionar --</option>
+                      ${catByGroup('FUENTE_DETECCION').map(c => `<option value="${c.valor}" ${h.fuente_deteccion===c.valor?'selected':''}>${c.valor}</option>`).join('')}
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1">Área Involucrada</label>
+                    <select id="devInvArea" ${isClosed?'disabled':''} class="w-full px-3 py-2 rounded-xl border border-slate-300 bg-slate-50">
+                      <option value="">-- Seleccionar --</option>
+                      ${AppState.areas.map(a => `<option value="${a.id}" ${h.involucrado_area_id===a.id?'selected':''}>${a.nombre}</option>`).join('')}
+                    </select>
+                  </div>
+                </div>
+
+                ${isProd ? `
+                  <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-3 rounded-xl bg-amber-50/60 border border-amber-200">
+                    <input id="tecCalibre" value="${tec.calibre || ''}" ${isClosed?'disabled':''} placeholder="Calibre" class="px-2.5 py-1.5 rounded-lg border border-amber-200 bg-white text-xs font-mono-code" />
+                    <input id="tecLongitud" value="${tec.longitud || ''}" ${isClosed?'disabled':''} placeholder="Longitud" class="px-2.5 py-1.5 rounded-lg border border-amber-200 bg-white text-xs font-mono-code" />
+                    <input id="tecPeso" value="${tec.peso || ''}" ${isClosed?'disabled':''} placeholder="Peso (kg)" class="px-2.5 py-1.5 rounded-lg border border-amber-200 bg-white text-xs font-mono-code" />
+                    <input id="tecMaquina" value="${tec.maquinaria || ''}" ${isClosed?'disabled':''} placeholder="Maquinaria / OP" class="px-2.5 py-1.5 rounded-lg border border-amber-200 bg-white text-xs" />
+                  </div>
+                ` : ''}
+
+                ${!isClosed && h.fase_actual === 'DESARROLLO' ? `
+                  <div class="flex flex-wrap gap-2 pt-2">
+                    <button onclick="SncUI.saveDesarrollo(false)" class="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 font-semibold text-xs">Guardar Borrador</button>
+                    <button onclick="SncUI.saveDesarrollo(true)" class="px-4 py-2 rounded-xl bg-slate-900 text-white font-bold text-xs">Avanzar a Análisis →</button>
+                  </div>
+                ` : ''}
+              </div>
+            </div>
+
+            <!-- Análisis, Planes y Costos -->
+            <div class="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
+              <h3 class="font-bold text-slate-900">Análisis, Planes de Acción y Costos</h3>
+              ${d.analisis.length > 0 ? `<div class="space-y-2">${d.analisis.map(a => `<div class="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs"><strong class="text-slate-800">${a.metodo}:</strong> ${a.causa_raiz}</div>`).join('')}</div>` : '<p class="text-xs text-slate-400">Sin análisis de causa raíz registrados aún.</p>'}
+              ${!isClosed && h.fase_actual === 'ANALISIS' ? `
+                <div class="grid sm:grid-cols-3 gap-2 pt-2 border-t border-slate-100">
+                  <select id="anaMetodo" class="px-3 py-2 rounded-xl border border-slate-300 text-xs">${catByGroup('METODO_ANALISIS').map(c => `<option value="${c.valor}">${c.valor}</option>`).join('')}</select>
+                  <input id="anaCausa" placeholder="Causa raíz identificada" class="sm:col-span-2 px-3 py-2 rounded-xl border border-slate-300 text-xs" />
+                </div>
+                <button onclick="SncUI.doAction('AGREGAR_ANALISIS', { metodo: document.getElementById('anaMetodo').value, causa_raiz: document.getElementById('anaCausa').value })" class="px-3.5 py-1.5 rounded-lg bg-slate-800 text-white text-xs font-semibold">+ Agregar Análisis</button>
+              ` : ''}
+
+              ${d.costos.length > 0 ? `<div class="text-xs font-mono-code text-slate-700 pt-2 border-t border-slate-100">Costos acumulados: <strong>$${d.costos.reduce((s,c)=>s+(Number(c.valor)||0),0).toLocaleString()}</strong></div>` : ''}
+              ${!isClosed && h.fase_actual === 'ANALISIS' ? `
+                <div class="pt-3 border-t border-slate-100 flex justify-end">
+                  <button onclick="SncUI.doAction('AVANZAR_REVISION')" class="px-4 py-2 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs">Enviar a Revisión Gerencia →</button>
+                </div>
+              ` : ''}
+            </div>
+          </div>
+
+          <!-- Columna Lateral: Evidencias + Historial -->
+          <div class="space-y-5">
+            <div class="bg-white rounded-2xl border border-slate-200 p-5">
+              <h3 class="font-bold text-slate-900 mb-3 text-sm">Evidencias (Drive)</h3>
+              <div class="space-y-2 mb-3">
+                ${d.evidencias.length === 0 ? '<p class="text-xs text-slate-400">Sin archivos adjuntos.</p>' : d.evidencias.map(e => `
+                  <a href="${e.url}" target="_blank" class="block p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-xs font-medium text-blue-700 truncate">📎 ${e.nombre_archivo}</a>
+                `).join('')}
+              </div>
+              ${!isClosed ? `
+                <label class="block w-full text-center px-3 py-2 rounded-xl border border-dashed border-slate-300 text-xs font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer">
+                  + Subir Foto o PDF
+                  <input type="file" accept="image/*,.pdf" class="hidden" onchange="SncUI.uploadFile(event, '${h.id}')" />
+                </label>
+              ` : ''}
+            </div>
+
+            <div class="bg-white rounded-2xl border border-slate-200 p-5">
+              <h3 class="font-bold text-slate-900 mb-3 text-sm">Historial Cronológico</h3>
+              <div class="space-y-2.5 max-h-80 overflow-y-auto pr-1">
+                ${d.historial.slice().reverse().map(x => `
+                  <div class="text-xs border-l-2 border-amber-500 pl-3 py-0.5">
+                    <p class="font-bold text-slate-800">${x.evento} <span class="font-normal text-slate-400">· ${String(x.creado_en).substring(0,16).replace('T',' ')}</span></p>
+                    ${x.motivo ? `<p class="text-slate-600">${x.motivo}</p>` : ''}
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    },
+
+    async saveDesarrollo(avanzar) {
+      const tecEl = document.getElementById('tecCalibre');
+      const tec = tecEl ? {
+        calibre: document.getElementById('tecCalibre').value,
+        longitud: document.getElementById('tecLongitud').value,
+        peso: document.getElementById('tecPeso').value,
+        maquinaria: document.getElementById('tecMaquina').value
+      } : {};
+      await this.doAction(avanzar ? 'AVANZAR_ANALISIS' : 'GUARDAR_DESARROLLO', {
+        descripcion_detalle: document.getElementById('devDetalle').value,
+        origen_snc: document.getElementById('devOrigen').value,
+        fuente_deteccion: document.getElementById('devFuente').value,
+        involucrado_area_id: document.getElementById('devInvArea').value,
+        datos_tecnicos_json: tec
+      });
+    },
+
+    async doAction(action, extra = {}) {
+      const h = this.currentDetail.hallazgo;
+      document.getElementById('loadingOverlay').classList.remove('hidden');
+      try {
+        await ApiClient.call('apiSncAction', AppState.token, Object.assign({ hallazgo_id: h.id, action: action }, extra));
+        showToast('Acción ejecutada correctamente', 'success');
+        await this.openDetail(h.id);
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        document.getElementById('loadingOverlay').classList.add('hidden');
+      }
+    },
+
+    promptAction(action, label) {
+      const motivo = prompt(label + ':');
+      if (motivo) this.doAction(action, { motivo: motivo });
+    },
+
+    promptReturn() {
+      const motivo = prompt('Motivo obligatorio de devolución a Desarrollo:');
+      if (motivo) this.doAction('DEVOLVER', { fase_destino: 'DESARROLLO', motivo: motivo });
+    },
+
+    openCloseModal() {
+      const res = prompt('Resultado de eficacia (escribe: IMPLEMENTADA_EFICAZ, IMPLEMENTADA_NO_EFICAZ o NO_IMPLEMENTADA):', 'IMPLEMENTADA_EFICAZ');
+      if (res) this.doAction('APROBAR_CIERRE', { resultado_cierre: res });
+    },
+
+    uploadFile(event, hallazgoId) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64 = reader.result.split(',')[1];
+        document.getElementById('loadingOverlay').classList.remove('hidden');
+        try {
+          await ApiClient.call('apiUploadEvidence', AppState.token, {
+            modulo: 'SNC',
+            entidad_tipo: 'HALLAZGO',
+            entidad_id: hallazgoId,
+            nombre_archivo: file.name,
+            mime_type: file.type,
+            base64: base64
+          });
+          showToast('Evidencia subida a Drive', 'success');
+          await this.openDetail(hallazgoId);
+        } catch (err) {
+          showToast(err.message, 'error');
+        } finally {
+          document.getElementById('loadingOverlay').classList.add('hidden');
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+</script>
